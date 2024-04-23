@@ -1,16 +1,22 @@
 using UnityEngine;
 using Unity.Mathematics;
 using System.Runtime.InteropServices;
+using System;
 
 [System.Serializable]
 [StructLayout(LayoutKind.Sequential, Size = 44)]
 public struct Particle //44 bytes total
 {
-    //public float pressure; //4 bytes
     public float2 density; //8 bytes
     public Vector3 velocity; //12 bytes
     public Vector3 predictedPosition;
     public Vector3 position;
+}
+
+public struct Sphere //16 bytes total
+{
+    public Vector3 pos; //12 bytes
+    public float radius; //4 bytes
 }
 
 public class Simulation3D : MonoBehaviour
@@ -33,12 +39,14 @@ public class Simulation3D : MonoBehaviour
     public ParticleDisplay3D display;
 
     [Header("Colliders")]
-    public Transform sphere;
+    public Transform[] spheres;
 
     // Buffers
     public ComputeBuffer particleBuffer { get; private set; }
     ComputeBuffer spatialIndices;
     ComputeBuffer spatialOffsets;
+
+    ComputeBuffer sphereBuffer;
 
     // Kernel IDs
     const int externalForcesKernel = 0;
@@ -62,6 +70,7 @@ public class Simulation3D : MonoBehaviour
         // Create buffers
         int numParticles = spawnData.points.Length;
         particleBuffer = ComputeHelper.CreateStructuredBuffer<Particle>(numParticles);
+        sphereBuffer = ComputeHelper.CreateStructuredBuffer<Sphere>(spheres.Length);
         
         spatialIndices = ComputeHelper.CreateStructuredBuffer<uint3>(numParticles);
         spatialOffsets = ComputeHelper.CreateStructuredBuffer<uint>(numParticles);
@@ -74,7 +83,10 @@ public class Simulation3D : MonoBehaviour
         ComputeHelper.SetBuffer(compute, spatialIndices, "SpatialIndices", spatialHashKernel, densityKernel, pressureKernel, viscosityKernel);
         ComputeHelper.SetBuffer(compute, spatialOffsets, "SpatialOffsets", spatialHashKernel, densityKernel, pressureKernel, viscosityKernel);
 
+        ComputeHelper.SetBuffer(compute, sphereBuffer, "spheres", externalForcesKernel, spatialHashKernel, densityKernel, pressureKernel, viscosityKernel, updatePositionsKernel);
+
         compute.SetInt("numParticles", particleBuffer.count);
+        compute.SetInt("numSpheres", sphereBuffer.count);
 
         gpuSort = new();
         gpuSort.SetBuffers(spatialIndices, spatialOffsets);
@@ -111,7 +123,6 @@ public class Simulation3D : MonoBehaviour
         ComputeHelper.Dispatch(compute, particleBuffer.count, kernelIndex: pressureKernel);
         ComputeHelper.Dispatch(compute, particleBuffer.count, kernelIndex: viscosityKernel);
         ComputeHelper.Dispatch(compute, particleBuffer.count, kernelIndex: updatePositionsKernel);
-
     }
 
     void UpdateSettings()
@@ -122,8 +133,17 @@ public class Simulation3D : MonoBehaviour
         compute.SetMatrix("localToWorld", transform.localToWorldMatrix);
         compute.SetMatrix("worldToLocal", transform.worldToLocalMatrix);
 
-        compute.SetVector("spherePos", sphere.position);
-        compute.SetFloat("sphereRadius", sphere.localScale.x / 2f);
+        sphereBuffer.SetData(GetSpheres());
+        //ComputeHelper.SetBuffer(compute, sphereBuffer, "spheres", externalForcesKernel, spatialHashKernel, densityKernel, pressureKernel, viscosityKernel, updatePositionsKernel);
+    }
+
+    private Sphere[] GetSpheres()
+    {
+        Sphere[] allSphere = new Sphere[spheres.Length];
+        for (int i = 0; i < allSphere.Length; i++)
+            allSphere[i] = new Sphere { pos = spheres[i].position, radius = spheres[i].localScale.x / 2f };
+
+        return allSphere;
     }
 
     void SetInitialBufferData(Spawner3D.SpawnData spawnData)

@@ -19,6 +19,12 @@ struct Particle
     float3 position;
 };
 
+struct Sphere
+{
+    float3 pos;
+    float radius;
+};
+
 // Buffers
 RWStructuredBuffer<Particle> particles;
 RWStructuredBuffer<uint3> SpatialIndices; // used for spatial hashing
@@ -45,8 +51,9 @@ const float edgeForceDst;
 const float3 boundsSize;
 const float3 centre;
 
-const float3 spherePos; //collision sphere
-const float sphereRadius;
+//Collision
+RWStructuredBuffer<Sphere> spheres;
+const uint numSpheres;
 
 const float4x4 localToWorld;
 const float4x4 worldToLocal;
@@ -95,12 +102,20 @@ void ResolveCollisions(uint particleIndex)
 	// Transform resolved position/velocity back to world space
 	particles[particleIndex].position = mul(localToWorld, float4(posLocal, 1)).xyz;
 	particles[particleIndex].velocity = mul(localToWorld, float4(velocityLocal, 0)).xyz;
-	
-    float3 colDir = particles[particleIndex].position - spherePos;
-    if (length(colDir) < sphereRadius)
+}
+
+void OutsideCollisions(uint particleIndex)
+{
+	//Spheres
+    for (uint i = 0; i < numSpheres; i++)
     {
-        particles[particleIndex].velocity += colDir;
+        float3 colDir = particles[particleIndex].position - spheres[i].pos;
+        if (length(colDir) < spheres[i].radius)
+        {
+            particles[particleIndex].velocity += colDir;
+        }
     }
+
 }
 
 [numthreads(NumThreads,1,1)]
@@ -292,4 +307,5 @@ void UpdatePositions(uint3 id : SV_DispatchThreadID)
 	
     particles[id.x].position += particles[id.x].velocity * deltaTime;
 	ResolveCollisions(id.x);
+    OutsideCollisions(id.x);
 }
