@@ -124,7 +124,7 @@ void OutsideCollisions(uint particleIndex)
         float3 colDir = particles[particleIndex].position - spheres[i].pos;
         if (length(colDir) < spheres[i].radius)
         {
-            particles[particleIndex].velocity += (spheres[i].radius - length(colDir)) * colDir;
+            particles[particleIndex].velocity += colDir;
         }
     }
 
@@ -148,22 +148,22 @@ void OutsideCollisions(uint particleIndex)
             if (xDist < yDist)
             {
 				if (xDist < zDist)
-                    force = sign(x) * xDist * cubes[j].xLocal + .001 * sign(x);
+                    force = sign(x) * xDist * cubes[j].xLocal; // + .001 * sign(x);
 				else
-                    force = sign(z) * zDist * cubes[j].zLocal + .001 * sign(z);
+                    force = sign(z) * zDist * cubes[j].zLocal; // + .001 * sign(z);
 
             }
             else
             {
 				if(yDist < zDist)
-                    force = sign(y) * yDist * cubes[j].yLocal + .001 * sign(y);
+                    force = sign(y) * yDist * cubes[j].yLocal; // + .001 * sign(y);
 				else
-                    force = sign(z) * zDist * cubes[j].zLocal + .001 * sign(z);
+                    force = sign(z) * zDist * cubes[j].zLocal; // + .001 * sign(z);
 
             }
             
 			particles[particleIndex].position += force;
-            particles[particleIndex].velocity = (1 - collisionDamping) * particles[particleIndex].velocity;
+            particles[particleIndex].velocity = (1 - collisionDamping) * (particles[particleIndex].velocity + force);
         }
     }
 
