@@ -25,10 +25,26 @@ struct Sphere
     float radius;
 };
 
+struct Cube
+{
+    float3 pos;
+    float3 size;
+    float3 xLocal;
+    float3 yLocal;
+    float3 zLocal;
+};
+
 // Buffers
 RWStructuredBuffer<Particle> particles;
 RWStructuredBuffer<uint3> SpatialIndices; // used for spatial hashing
 RWStructuredBuffer<uint> SpatialOffsets; // used for spatial hashing
+
+// Collision Buffers
+RWStructuredBuffer<Sphere> spheres;
+const uint numSpheres;
+
+RWStructuredBuffer<Cube> cubes;
+const uint numCubes;
 
 // Settings
 const uint numParticles;
@@ -50,10 +66,6 @@ const float edgeForce;
 const float edgeForceDst;
 const float3 boundsSize;
 const float3 centre;
-
-//Collision
-RWStructuredBuffer<Sphere> spheres;
-const uint numSpheres;
 
 const float4x4 localToWorld;
 const float4x4 worldToLocal;
@@ -112,7 +124,46 @@ void OutsideCollisions(uint particleIndex)
         float3 colDir = particles[particleIndex].position - spheres[i].pos;
         if (length(colDir) < spheres[i].radius)
         {
-            particles[particleIndex].velocity += colDir;
+            particles[particleIndex].velocity += (spheres[i].radius - length(colDir)) * colDir;
+        }
+    }
+
+	//Cubes
+    for (uint j = 0; j < numCubes; j++)
+    {
+        float3 V = particles[particleIndex].position - cubes[j].pos;
+        float x = dot(V, cubes[j].xLocal);
+        float y = dot(V, cubes[j].yLocal);
+        float z = dot(V, cubes[j].zLocal);
+        float px = abs(x);
+        float py = abs(y);
+        float pz = abs(z);
+		
+        if (px <= cubes[j].size.x && py <= cubes[j].size.y && pz <= cubes[j].size.z)
+        {
+            float xDist = cubes[j].size.x - px;
+            float yDist = cubes[j].size.y - py;
+            float zDist = cubes[j].size.z - pz;
+            float3 force;
+            if (xDist < yDist)
+            {
+				if (xDist < zDist)
+                    force = sign(x) * xDist * cubes[j].xLocal + .001 * sign(x);
+				else
+                    force = sign(z) * zDist * cubes[j].zLocal + .001 * sign(z);
+
+            }
+            else
+            {
+				if(yDist < zDist)
+                    force = sign(y) * yDist * cubes[j].yLocal + .001 * sign(y);
+				else
+                    force = sign(z) * zDist * cubes[j].zLocal + .001 * sign(z);
+
+            }
+            
+			particles[particleIndex].position += force;
+            particles[particleIndex].velocity = (1 - collisionDamping) * particles[particleIndex].velocity;
         }
     }
 

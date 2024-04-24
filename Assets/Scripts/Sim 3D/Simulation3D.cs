@@ -13,11 +13,24 @@ public struct Particle //44 bytes total
     public Vector3 position;
 }
 
+[System.Serializable]
+[StructLayout(LayoutKind.Sequential, Size = 16)]
 public struct Sphere //16 bytes total
 {
     public Vector3 pos; //12 bytes
     public float radius; //4 bytes
 }
+
+[System.Serializable]
+[StructLayout(LayoutKind.Sequential, Size = 60)]
+public struct Cube //60 bytes total
+{
+    public Vector3 pos; //12 bytes
+    public Vector3 size;
+    public Vector3 xLocal;
+    public Vector3 yLocal;
+    public Vector3 zLocal;
+};
 
 public class Simulation3D : MonoBehaviour
 {
@@ -40,13 +53,16 @@ public class Simulation3D : MonoBehaviour
 
     [Header("Colliders")]
     public Transform[] spheres;
+    public Transform[] cubes;
 
     // Buffers
     public ComputeBuffer particleBuffer { get; private set; }
     ComputeBuffer spatialIndices;
     ComputeBuffer spatialOffsets;
 
+    // Collision Buffers
     ComputeBuffer sphereBuffer;
+    ComputeBuffer cubeBuffer;
 
     // Kernel IDs
     const int externalForcesKernel = 0;
@@ -67,13 +83,16 @@ public class Simulation3D : MonoBehaviour
 
         spawnData = spawner.GetSpawnData();
 
-        // Create buffers
+        // Create Buffers
         int numParticles = spawnData.points.Length;
         particleBuffer = ComputeHelper.CreateStructuredBuffer<Particle>(numParticles);
-        sphereBuffer = ComputeHelper.CreateStructuredBuffer<Sphere>(spheres.Length);
         
         spatialIndices = ComputeHelper.CreateStructuredBuffer<uint3>(numParticles);
         spatialOffsets = ComputeHelper.CreateStructuredBuffer<uint>(numParticles);
+        
+        // Create Collision Buffers
+        sphereBuffer = ComputeHelper.CreateStructuredBuffer<Sphere>(spheres.Length);
+        cubeBuffer = ComputeHelper.CreateStructuredBuffer<Cube>(cubes.Length);
 
         // Set buffer data
         SetInitialBufferData(spawnData);
@@ -83,10 +102,15 @@ public class Simulation3D : MonoBehaviour
         ComputeHelper.SetBuffer(compute, spatialIndices, "SpatialIndices", spatialHashKernel, densityKernel, pressureKernel, viscosityKernel);
         ComputeHelper.SetBuffer(compute, spatialOffsets, "SpatialOffsets", spatialHashKernel, densityKernel, pressureKernel, viscosityKernel);
 
+        // Init collision compute
         ComputeHelper.SetBuffer(compute, sphereBuffer, "spheres", externalForcesKernel, spatialHashKernel, densityKernel, pressureKernel, viscosityKernel, updatePositionsKernel);
+        ComputeHelper.SetBuffer(compute, cubeBuffer, "cubes", externalForcesKernel, spatialHashKernel, densityKernel, pressureKernel, viscosityKernel, updatePositionsKernel);
+
 
         compute.SetInt("numParticles", particleBuffer.count);
+
         compute.SetInt("numSpheres", sphereBuffer.count);
+        compute.SetInt("numCubes", cubeBuffer.count);
 
         gpuSort = new();
         gpuSort.SetBuffers(spatialIndices, spatialOffsets);
@@ -134,7 +158,7 @@ public class Simulation3D : MonoBehaviour
         compute.SetMatrix("worldToLocal", transform.worldToLocalMatrix);
 
         sphereBuffer.SetData(GetSpheres());
-        //ComputeHelper.SetBuffer(compute, sphereBuffer, "spheres", externalForcesKernel, spatialHashKernel, densityKernel, pressureKernel, viscosityKernel, updatePositionsKernel);
+        cubeBuffer.SetData(GetCubes());
     }
 
     private Sphere[] GetSpheres()
@@ -144,6 +168,16 @@ public class Simulation3D : MonoBehaviour
             allSphere[i] = new Sphere { pos = spheres[i].position, radius = spheres[i].localScale.x / 2f };
 
         return allSphere;
+    }
+
+    private Cube[] GetCubes()
+    {
+        Cube[] allCubes = new Cube[cubes.Length];
+        for (int i = 0; i < allCubes.Length; i++)
+            allCubes[i] = new Cube { pos = cubes[i].position, size = cubes[i].localScale / 2f, 
+                xLocal = cubes[i].right.normalized, yLocal = cubes[i].up.normalized, zLocal = cubes[i].forward.normalized };
+
+        return allCubes;
     }
 
     void SetInitialBufferData(Spawner3D.SpawnData spawnData)
